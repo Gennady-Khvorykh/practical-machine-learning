@@ -257,11 +257,10 @@ cf3
 * Generalized Boosted Regression model was fitted to predict the response variable of 5 classes. 
 * The overall accuracy resulted in 0.96.
 * The best model tuning parameters are found to be as follow:
-  
-  + n.trees = 150,
-  + interaction.depth = 3,
-  + shrinkage = 0.1,
-  + n.minobsinnode = 10. 
+    + n.trees = 150,
+    + interaction.depth = 3,
+    + shrinkage = 0.1,
+    + n.minobsinnode = 10. 
 * Bootstrap, 5-fold and 10-fold cross validation methods showed similar best tuning parameters and overall accuracy.
 * CPU time was determined while tuning the models as follow: 
 

@@ -462,13 +462,15 @@ cf3</code></pre>
 <ul>
 <li>Generalized Boosted Regression model was fitted to predict the response variable of 5 classes.</li>
 <li>The overall accuracy resulted in 0.96.</li>
-<li><p>The best model tuning parameters are found to be as follow:</p></li>
+<li>The best model tuning parameters are found to be as follow:
+<ul>
 <li>n.trees = 150,</li>
 <li>interaction.depth = 3,</li>
 <li>shrinkage = 0.1,</li>
 <li>n.minobsinnode = 10.</li>
+</ul></li>
 <li>Bootstrap, 5-fold and 10-fold cross validation methods showed similar best tuning parameters and overall accuracy.</li>
-<li><p>CPU time was determined while tuning the models as follow:</p></li>
+<li>CPU time was determined while tuning the models as follow:</li>
 </ul>
 <pre class="r"><code>#Compare the overal accuracies and user time for different resampling
 tab &lt;- rbind(cbind(cf1$overall[&quot;Accuracy&quot;], timing1[&quot;user.self&quot;]),
