@@ -1,0 +1,290 @@
+---
+title: "Does Resampling Influence on Gradient Boosting Trees Fitted for Weight Lifting Exercises?"
+author: "Gennady Khvorykh, [followbigdata.com](http://followbigdata.com)"
+date: "Saturday, September 12, 2015"
+output: html_document
+---
+
+```{r setup, include = F}
+knitr::opts_chunk$set(cache = T)
+```
+
+
+### Abstract
+The influence of data resampling on the performance of Generalized Boosted Regression Model is investigated. *Bootstrap*, *5-fold* and *10-fold* cross validation methods are compared. The models were built to predict the quality of weight lifting exercise. The response variable had 5 classes. Within 95% confidence intervals the overall accuracy happened to be the same for all models fitted and equaled to 0.96. Besides, the CPU time charged for different model fitting was determined and compared. It was found to be dependable on resampling method. The research was made as a Course Project within [the Data Science Specialization](https://www.coursera.org/specializations/jhudatascience) at Coursera educational platform.         
+
+### Introduction
+Human activity recognition is gaining increasing attention last years. According to [a group of research and development](http://groupware.les.inf.puc-rio.br/har) from Brazil, the number of publications based on wearable accelerometer data increased from 4 to 17 within 2006-2011. Following this direction the researchers hold an experiment to learn the possibility of identifying whether the person makes physical exercise correctly. 
+
+Six participants made weight lifting exercise. It was done in 5 different ways. One way was appropriate, and the others reflected main mistakes. The experimenter wore 4 accelerometers. Each fashion of making the exercise was repeated 10 times. The signals from sensors thus recorded became a data set for the purpose of the research, which aims at building the predictive model to detect 5 ways of exercise performance.    
+
+To recognize the activities, the predictive model was built with the use of Random Forest method. The researches reported the average accuracy of 98.2% (see [Velloso et al., 2013](#Velloso)).    
+
+For the purpose of this research the Gradient Boosted Trees method was chosen. It is considered to be on the top of predictive algorithms. The method was applied with the use of `caret` R package which includes [gbm package](https://cran.r-project.org/web/packages/gbm/gbm.pdf).   
+
+#### Computer system
+
+The calculations were made on the computer with the following parameters. 
+ 
+ * Processor: Intel(R) Core(TM) i7-4710HQ CPU @ 2.50GHz 
+ * RAM: 8GB
+ * OS: Windows 8.1
+ * System type: 64-bit
+ 
+
+#### Data sets
+
+The data sets were downloaded from the links provided in the assignment: 
+
+* for training [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) 
+* for testing [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+```{r eval = FALSE}
+## Download data sets on local computer
+if (!file.exists("pml-training.csv")) download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv")
+
+if (!file.exists("pml-testing.csv")) download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv")
+```
+
+### Data exploration and feature selection 
+
+Firstly, the data sets were explored. The number of variables was found to be 160. The training data set contained 19622 observations and the testing one had 20.
+
+```{r}
+## Read data sets
+
+training <- read.csv("pml-training.csv")  
+testing <- read.csv("pml-testing.csv") 
+
+dim(training) 
+dim(testing) 
+
+```
+
+The fist 7 variables stored information about experimenters and time parameters. 
+We excluded these variables from further consideration. 
+
+```{r}
+str(training, list.len = 10)
+
+training <- training[,-(1:7)]
+testing <- testing[,-(1:7)]
+```
+
+The other variables stored the signals from sensors. 
+The column `classe` is outcome to be predicted. This variable was found to be quite balanced in data set. 
+
+  
+```{r}
+table(training$classe)
+```
+
+However, summary() revealed that several columns contained 19216 NAs.
+
+```{r}
+summary(training)[,1:10]
+```
+
+ 
+We found out these columns.
+
+ 
+```{r}
+countNA <- sapply(training, function(x) sum(is.na(x)))
+table(countNA)
+```
+
+The code below discovered 67 variables having 19216 NAs. The rest 86 variables did not have NAs. 
+Since 19216 NAs is 98% of the total number of observations (19622), we omitted the corresponding columns. 
+
+```{r}
+fakeVar <- names(countNA[countNA == 19216])
+
+training <- training[setdiff(names(training), fakeVar)]
+testing <- testing[setdiff(names(testing), fakeVar)] 
+```
+
+
+Summary() also showed that some variable were defined as factor containing strange levels `#DIV/0!` Besides they had missing values. We checked how often this happened.
+
+```{r}
+countFakeVar <- sapply(training, function(x) sum(x %in% c("#DIV/0!", "")))
+table(countFakeVar)
+```
+
+Thus, it was found that 53 variables did not have the combination of `#DIV/0!` and missing values at all.
+But 33 variables did have. We excluded them from data sets. 
+
+```{r}
+fakeVar <- names(countFakeVar[countFakeVar != 0])
+training <- training[setdiff(names(training), fakeVar)]
+testing <- testing[setdiff(names(testing), fakeVar)] 
+```
+
+Finally we came to 53 variables including the outcome. The other words, **52 variables can be further considered as predictors**.
+
+Additionally, we checked the predictors for near-zero-variance cases. However with the frequency ratio of 95/5 and the percent of unique values being higher than 10% no predictors were flagged. 
+
+```{r}
+require(caret)
+nzv <- nearZeroVar(training[, -53], saveMetrics = T)
+head(nzv)
+
+```
+
+### Data Partitioning 
+
+Stratified data samples for training and testing of the model were further created. By default the number of partition equaled one (times = 1). The training data consisted of 75% and the testing data consisted of 25% of the initial data set taken.
+
+
+```{r}
+set.seed(123)
+
+inTraining <- createDataPartition(y = training$classe, p = 0.75, list = F)
+Train <- training[inTraining, ]
+Test <- training[-inTraining, ]
+```
+
+### Fitting the models
+
+#### Bootstrap
+
+Simple bootstrap resampling was used by default while fitting Generalized Boosted Regression model. It means that testing data were resampled 25 times. 
+
+The model has 4 tuning parameters. These are as follow:
+
+* `n.trees` - total number of trees to be fitted,
+* `interaction.depth` - the maximum depth of variable interactions,
+* `shrinkage` - so called learning rate or step-size reduction,
+* `n.minobsinnode` - minimum actual number of observations in the trees terminal nodes. 
+
+During the fitting of all models given in this report, `n.trees` and `interaction.depth` were optimized using the default grid, while `shrinkage` and `n.minobsinnode` were taken as defaults and fixed.
+
+CPU time to process the code was measured with `proc.time()` function. 
+
+```{r eval = F}
+start <- proc.time()
+gbmFit1 <- train(classe ~., 
+                 data = Train, 
+                 method = "gbm",
+                 verbose = F) 
+timing1 <- proc.time() - start
+
+```
+
+Here and further the largest value of accuracy was used to select the optimal model. The final values of its tuning parameters were found to be as follow: 
+
+* n.trees = 150,
+* interaction.depth = 3,
+* shrinkage = 0.1,
+* n.minobsinnode = 10. 
+
+The model showed the accuracy of 0.96.  
+
+```{r}
+gbmFit1 
+```
+
+Using the best model parameters we predicted the values on testing data and built the confusion matrix to evaluate the model performance.  
+
+```{r}
+cf1 <- confusionMatrix(predict(gbmFit1, Test), Test$classe)
+cf1
+```
+
+The overall accuracy estimated on the testing data set happened to be 0.96 within the 95% confidence intervals. 
+
+#### 5-fold cross-validation
+
+The model applying 5-fold cross-validation method was fitted as follow. The respective parameters were passed to the `train()` function with `traiControl()` function. The number of repeats of cross-validation subsets was left to be default, i.e., 1. 
+
+```{r eval = F}
+ctrl <- trainControl(method = "cv",
+                     number = 5)
+
+start <- proc.time()
+gbmFit2 <- train(classe ~., 
+                 data = Train, 
+                 method = "gbm",
+                 trControl = ctrl,
+                 verbose = F) 
+timing2 <- proc.time() - start
+
+```
+
+The model trained in such a way demonstrated similar tuning parameters and accuracy. 
+
+```{r}
+gbmFit2 
+```
+
+The overall accuracy counted from the confusion matrix happened to be the same (0.96) within the confidence intervals.  
+
+```{r}
+cf2 <- confusionMatrix(predict(gbmFit2, Test), Test$classe)
+cf2
+```
+
+The evaluation of the model performance on testing data did not reveal any significant changes in the overall accuracy. 
+
+#### 10-fold cross-validation
+
+Finally, the model was trained applying 10-fold cross-validation resampling. 
+
+```{r eval = F}
+
+ctrl <- trainControl(method = "cv",
+                     number = 10)
+
+start <- proc.time()
+gbmFit3 <- train(classe ~., 
+                 data = Train, 
+                 method = "gbm",
+                 trControl = ctrl,
+                 verbose = F) 
+timing3 <- proc.time() - start
+```
+
+The confusion matrix did not reveal any significant changes in the overall accuracy in comparison with the previous two models. The accuracy was estimated to be 0.96.
+
+```{r}
+cf3 <- confusionMatrix(predict(gbmFit3, Test), Test$classe)
+cf3
+```
+
+
+### Results
+* Generalized Boosted Regression model was fitted to predict the response variable of 5 classes. 
+* The overall accuracy resulted in 0.96.
+* The best model tuning parameters are found to be as follow:
+  
+  + n.trees = 150,
+  + interaction.depth = 3,
+  + shrinkage = 0.1,
+  + n.minobsinnode = 10. 
+* Bootstrap, 5-fold and 10-fold cross validation methods showed similar best tuning parameters and overall accuracy.
+* CPU time was determined while tuning the models as follow: 
+
+```{r}
+#Compare the overal accuracies and user time for different resampling
+tab <- rbind(cbind(cf1$overall["Accuracy"], timing1["user.self"]),
+      cbind(cf2$overall["Accuracy"], timing2["user.self"]), 
+      cbind(cf3$overall["Accuracy"], timing3["user.self"]))
+rownames(tab) <- c("Bootstrap","5K CV","10K CV")
+colnames(tab) <- c("Accuracy", "User time")
+tab
+```
+
+### Conclusions
+It is established that tuning parameters and overall accuracy of the model under consideration do not sensitive to the resampling procedure. Bootstrap, 5-fold and 10-fold cross validation methods showed the same value of performance metric. The overall accuracy consisted of 0.96. 
+
+However, the CPU time is found to be dependable on resampling technique. Thus the model with 5-fold cross validation was fitted about 6 times faster than that of with bootstrap resampling. The fitting of the model with 10-fold cross validation required twice as much time as for fitting 5-fold cross validation. These results can be explained by the number of resampling the model undertakes, since after each resampling the model is fitted again. In the case of bootstrap the data were resampled 25 times, while in the case of cross validated models 5 and 10 times, respectively.      
+
+The tuning of model parameters can be further considered. The increase of trees up to 500 and the depth up to 5 are worth testing. Besides, the predictors being correlated is also can be questioned. In general, the predictors should be select thoroughly.       
+
+
+### References
+
+1. <a name="Velloso"></a> Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201#ixzz3lWGt8ZBj). Proceedings of 4th Augmented Human (AH) International Conference in cooperation with ACM SIGCHI (Augmented Human'13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+
